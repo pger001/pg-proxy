@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>API诊断页面</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .test-item {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #f9f9f9;
+        }
+        .success { color: #4CAF50; font-weight: bold; }
+        .error { color: #f44336; font-weight: bold; }
+        .warning { color: #ff9800; font-weight: bold; }
+        pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 3px;
+            margin-right: 10px;
+        }
+        .status.ok { background: #4CAF50; color: white; }
+        .status.fail { background: #f44336; color: white; }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover { background: #5568d3; }
+        #summary {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Flask API 诊断工具</h1>
+        
+        <div id="summary">
+            <h3>测试摘要</h3>
+            <p>状态: <span id="overallStatus">等待测试...</span></p>
+            <p>成功: <span id="successCount">0</span> / <span id="totalCount">6</span></p>
+        </div>
+        
+        <button onclick="runAllTests()">▶ 运行所有测试</button>
+        <button onclick="location.href='/'">🏠 返回Dashboard</button>
+        
+        <div id="results"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@0.27.2/dist/axios.min.js"></script>
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        
+        const tests = [
+            {
+                name: '摘要统计',
+                url: '/summary',
+                checkFields: (data) => {
+                    return {
+                        total_queries: typeof data.total_queries === 'number',
+                        total_traffic_mb: typeof data.total_traffic_mb === 'number',
+                        avg_time_ms: typeof data.avg_time_ms === 'number',
+                        cache_hit_rate: typeof data.cache_hit_rate === 'number'
+                    };
+                }
+            },
+            {
+                name: '租户排行',
+                url: '/tenant-ranking?limit=5',
+                checkFields: (data) => {
+                    if (!Array.isArray(data) || data.length === 0) return { array: false };
+                    const item = data[0];
+                    return {
+                        tenant_code: !!item.tenant_code,
+                        query_count: typeof item.query_count === 'number',
+                        traffic_mb: typeof item.traffic_mb === 'number',
+                        avg_time_ms: typeof item.avg_time_ms === 'number'
+                    };
+                }
+            },
+            {
+                name: '慢查询',
+                url: '/slow-queries?limit=5',
+                checkFields: (data) => {
+                    if (!Array.isArray(data) || data.length === 0) return { array: false };
+                    const item = data[0];
+                    return {
+                        tenant_code: !!item.tenant_code,
+                        execution_time_ms: typeof item.execution_time_ms === 'number',
+                        rows_returned: typeof item.rows_returned === 'number'
+                    };
+                }
+            },
+            {
+                name: '高流量查询',
+                url: '/high-traffic-queries?limit=5',
+                checkFields: (data) => {
+                    if (!Array.isArray(data) || data.length === 0) return { array: false };
+                    const item = data[0];
+                    return {
+                        tenant_code: !!item.tenant_code,
+                        traffic_mb: typeof item.traffic_mb === 'number',
+                        query_cost: typeof item.query_cost === 'number'
+                    };
+                }
+            },
+            {
+                name: '时间线 (关键)',
+                url: '/timeline?group_by=hour&days=1',
+                checkFields: (data) => {
+                    if (!Array.isArray(data) || data.length === 0) return { array: false };
+                    const item = data[0];
+                    return {
+                        time: !!item.time,
+                        traffic_kb: typeof item.traffic_kb === 'number',
+                        query_count: typeof item.query_count === 'number'
+                    };
+                }
+            },
+            {
+                name: '缓存统计',
+                url: '/cache-stats',
+                checkFields: (data) => {
+                    return {
+                        total_cache_hits: typeof data.total_cache_hits === 'number',
+                        saved_time_ms: typeof data.saved_time_ms === 'number',
+                        cache_hit_rate: typeof data.cache_hit_rate === 'number'
+                    };
+                }
+            }
+        ];
+
+        async function runAllTests() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<h2>测试结果</h2>';
+            
+            let successCount = 0;
+            
+            for (const test of tests) {
+                const testDiv = document.createElement('div');
+                testDiv.className = 'test-item';
+                
+                const url = API_BASE + test.url;
+                testDiv.innerHTML = `<h3>${test.name}</h3><p>正在测试 ${test.url}...</p>`;
+                resultsDiv.appendChild(testDiv);
+                
+                try {
+                    const startTime = Date.now();
+                    const response = await axios.get(url);
+                    const duration = Date.now() - startTime;
+                    
+                    const fieldCheck = test.checkFields(response.data);
+                    const allFieldsOk = Object.values(fieldCheck).every(v => v === true);
+                    
+                    if (allFieldsOk) {
+                        successCount++;
+                    }
+                    
+                    testDiv.innerHTML = `
+                        <h3>${test.name} <span class="status ${allFieldsOk ? 'ok' : 'fail'}">${allFieldsOk ? '✓ 通过' : '✗ 失败'}</span></h3>
+                        <p><strong>URL:</strong> ${test.url}</p>
+                        <p><strong>状态:</strong> <span class="success">HTTP ${response.status} OK</span></p>
+                        <p><strong>响应时间:</strong> ${duration}ms</p>
+                        <p><strong>字段检查:</strong></p>
+                        <ul>
+                            ${Object.entries(fieldCheck).map(([key, val]) => 
+                                `<li><span class="${val ? 'success' : 'error'}">${val ? '✓' : '✗'}</span> ${key}</li>`
+                            ).join('')}
+                        </ul>
+                        <details>
+                            <summary>查看响应数据</summary>
+                            <pre>${JSON.stringify(response.data, null, 2)}</pre>
+                        </details>
+                    `;
+                } catch (error) {
+                    testDiv.innerHTML = `
+                        <h3>${test.name} <span class="status fail">✗ 失败</span></h3>
+                        <p><strong>URL:</strong> ${test.url}</p>
+                        <p class="error">错误: ${error.message}</p>
+                        ${error.response ? `<p>HTTP ${error.response.status}: ${error.response.statusText}</p>` : ''}
+                        <pre>${error.stack}</pre>
+                    `;
+                }
+            }
+            
+            document.getElementById('successCount').textContent = successCount;
+            document.getElementById('totalCount').textContent = tests.length;
+            document.getElementById('overallStatus').innerHTML = 
+                successCount === tests.length 
+                    ? '<span class="success">✓ 全部通过</span>' 
+                    : `<span class="error">✗ ${tests.length - successCount} 个失败</span>`;
+        }
+        
+        // 页面加载时自动运行测试
+        window.addEventListener('DOMContentLoaded', runAllTests);
+    </script>
+</body>
+</html>

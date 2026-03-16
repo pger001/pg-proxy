@@ -1,0 +1,2578 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MSPBots Gateway - 租户流量统计仪表板</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios@0.27.2/dist/axios.min.js"></script>
+    <style>
+        :root {
+            --primary:       #1a3a6b;
+            --primary-light: #2255a4;
+            --accent:        #0ea5e9;
+            --accent2:       #6366f1;
+            --success:       #22c55e;
+            --warning:       #f59e0b;
+            --danger:        #ef4444;
+            --bg:            #f0f4f9;
+            --surface:       #ffffff;
+            --border:        #e2e8f0;
+            --text:          #1e293b;
+            --text-muted:    #64748b;
+            --shadow:        0 2px 12px rgba(26,58,107,0.10);
+            --shadow-md:     0 4px 24px rgba(26,58,107,0.14);
+            --radius:        14px;
+            --radius-sm:     8px;
+        }
+
+        * { margin:0; padding:0; box-sizing:border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            min-height: 100vh;
+            color: var(--text);
+        }
+
+        /* ── Sidebar nav ── */
+        .sidebar {
+            position: fixed;
+            top: 0; left: 0;
+            width: 220px;
+            height: 100vh;
+            background: var(--primary);
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            z-index: 100;
+            box-shadow: 4px 0 24px rgba(26,58,107,0.18);
+        }
+
+        .sidebar-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 22px 20px 18px;
+            border-bottom: 1px solid rgba(255,255,255,0.10);
+        }
+
+        .sidebar-logo svg {
+            flex-shrink: 0;
+        }
+
+        .sidebar-logo-text {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-logo-title {
+            color: #fff;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            line-height: 1.2;
+        }
+
+        .sidebar-logo-sub {
+            color: rgba(255,255,255,0.55);
+            font-size: 10px;
+            margin-top: 2px;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px 0;
+        }
+
+        .nav-section-title {
+            color: rgba(255,255,255,0.38);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            padding: 12px 20px 6px;
+        }
+
+        .tab-button {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            padding: 10px 20px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 13.5px;
+            color: rgba(255,255,255,0.70);
+            text-align: left;
+            border-left: 3px solid transparent;
+            transition: all 0.18s;
+            border-radius: 0;
+        }
+
+        .tab-button:hover {
+            background: rgba(255,255,255,0.08);
+            color: #fff;
+        }
+
+        .tab-button.active {
+            color: #fff;
+            background: rgba(14,165,233,0.18);
+            border-left-color: var(--accent);
+            font-weight: 600;
+        }
+
+        .tab-button .nav-icon { font-size: 15px; width: 20px; text-align: center; }
+
+        .sidebar-footer {
+            padding: 16px 20px;
+            border-top: 1px solid rgba(255,255,255,0.10);
+            font-size: 11px;
+            color: rgba(255,255,255,0.35);
+        }
+
+        /* ── Main layout ── */
+        .main-wrap {
+            margin-left: 220px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Top bar ── */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 90;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0 28px;
+            height: 58px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 1px 6px rgba(26,58,107,0.06);
+        }
+
+        .topbar-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status-badge.warning { background: #fef9c3; color: #854d0e; }
+        .status-badge.error   { background: #fee2e2; color: #991b1b; }
+
+        .btn-refresh {
+            padding: 6px 16px;
+            background: var(--primary-light);
+            color: #fff;
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 12.5px;
+            font-weight: 600;
+            transition: background 0.18s;
+        }
+        .btn-refresh:hover { background: var(--primary); }
+
+        /* ── Page content ── */
+        .page-content {
+            flex: 1;
+            padding: 24px 28px;
+        }
+
+        /* ── KPI strip ── */
+        .kpi-strip {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 22px;
+        }
+
+        .kpi-card {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 20px 22px;
+            box-shadow: var(--shadow);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            border-left: 4px solid var(--accent);
+            transition: box-shadow 0.2s;
+        }
+        .kpi-card:hover { box-shadow: var(--shadow-md); }
+        .kpi-card.kpi-clickable { cursor: pointer; transition: box-shadow 0.2s, filter 0.15s, transform 0.12s; }
+        .kpi-card.kpi-clickable:hover { filter: brightness(1.12) saturate(1.08); transform: translateY(-2px); box-shadow: 0 0 0 2px rgba(255,255,255,.18), 0 8px 24px rgba(0,0,0,.28); }
+        .kpi-card:nth-child(2) { border-left-color: var(--accent2); }
+        .kpi-card:nth-child(3) { border-left-color: var(--warning); }
+        .kpi-card:nth-child(4) { border-left-color: var(--success); }
+
+        .kpi-icon {
+            width: 44px; height: 44px;
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px;
+            background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+            flex-shrink: 0;
+        }
+        .kpi-card:nth-child(2) .kpi-icon { background: linear-gradient(135deg, #ede9fe, #ddd6fe); }
+        .kpi-card:nth-child(3) .kpi-icon { background: linear-gradient(135deg, #fef3c7, #fde68a); }
+        .kpi-card:nth-child(4) .kpi-icon { background: linear-gradient(135deg, #dcfce7, #bbf7d0); }
+
+        .kpi-label { font-size: 11.5px; color: var(--text-muted); margin-bottom: 4px; font-weight: 500; }
+        .kpi-value { font-size: 22px; font-weight: 800; color: var(--text); line-height: 1; }
+
+        /* ── Tab content ── */
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* ── Cards ── */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 18px;
+        }
+
+        .card {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 22px 24px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            transition: box-shadow 0.2s;
+        }
+        .card:hover { box-shadow: var(--shadow-md); }
+
+        .card h3 {
+            font-size: 14.5px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .full-width { grid-column: 1 / -1; }
+
+        /* ── Chart ── */
+        .chart-container {
+            position: relative;
+            height: 280px;
+            margin: 10px 0;
+        }
+
+        /* ── Tables ── */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        thead th {
+            background: #f8fafc;
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-muted);
+            border-bottom: 2px solid var(--border);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        tbody td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            color: var(--text);
+            vertical-align: middle;
+        }
+
+        tbody tr:hover { background: #f8fafc; }
+        tbody tr:last-child td { border-bottom: none; }
+
+        /* ── Ranking badge ── */
+        .ranking-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px; height: 26px;
+            border-radius: 50%;
+            background: var(--primary-light);
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        tbody tr:nth-child(1) .ranking-badge { background: #f59e0b; }
+        tbody tr:nth-child(2) .ranking-badge { background: #94a3b8; }
+        tbody tr:nth-child(3) .ranking-badge { background: #b45309; }
+
+        /* ── Traffic bar ── */
+        .traffic-bar-wrap { display: flex; align-items: center; gap: 8px; }
+        .traffic-bar {
+            height: 8px;
+            background: linear-gradient(90deg, var(--accent), var(--accent2));
+            border-radius: 4px;
+            min-width: 4px;
+        }
+        .traffic-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+        /* ── Metric mini grid ── */
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .metric-mini {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 60%, var(--accent2) 100%);
+            color: white;
+            padding: 16px 14px;
+            border-radius: var(--radius-sm);
+            text-align: center;
+        }
+
+        .metric-mini-value {
+            font-size: 1.6em;
+            font-weight: 800;
+            margin: 6px 0 2px;
+            line-height: 1;
+        }
+        .metric-mini-label {
+            font-size: 11px;
+            opacity: 0.85;
+            letter-spacing: 0.3px;
+        }
+
+        /* ── Stat box ── */
+        .stat-box { text-align: center; padding: 20px 0; }
+        .stat-value { font-size: 2.4em; font-weight: 800; color: var(--primary-light); margin: 10px 0 6px; }
+        .stat-label { color: var(--text-muted); font-size: 13px; }
+
+        /* ── Loading / empty ── */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .refresh-info {
+            color: var(--text-muted);
+            font-size: 12px;
+            text-align: right;
+            margin-top: 10px;
+        }
+
+        /* ── Form inputs ── */
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+            align-items: flex-end;
+        }
+        .filter-group { display: flex; flex-direction: column; gap: 4px; }
+        .filter-group label { font-size: 11px; color: var(--text-muted); font-weight: 600; letter-spacing: 0.3px; }
+        .filter-group input,
+        .filter-group select {
+            padding: 7px 11px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            color: var(--text);
+            background: #fff;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        .filter-group input:focus,
+        .filter-group select:focus { border-color: var(--accent); }
+
+        .btn-primary {
+            padding: 7px 20px;
+            background: var(--primary-light);
+            color: #fff;
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: background 0.18s;
+            align-self: flex-end;
+        }
+        .btn-primary:hover { background: var(--primary); }
+
+        .btn-collect {
+            padding: 8px 22px;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 700;
+            transition: background 0.18s;
+        }
+        .btn-collect:hover { background: #0284c7; }
+        .btn-collect:disabled { background: #94a3b8; cursor: not-allowed; }
+
+        /* ── Collect status card ── */
+        .collect-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .collect-card-header h3 { margin: 0; }
+        .collect-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 12px;
+        }
+        @media (max-width: 1100px) { .collect-stats-grid { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 700px)  { .collect-stats-grid { grid-template-columns: repeat(2, 1fr); } }
+        .collect-stat-block {
+            background: var(--bg);
+            border-radius: 10px;
+            padding: 12px 16px;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .collect-stat-block.clickable { cursor: pointer; transition: filter .15s, box-shadow .15s, transform .12s; }
+        .collect-stat-block.clickable:hover { filter: brightness(1.12); box-shadow: 0 0 0 2px var(--accent); transform: translateY(-1px); }
+        .collect-stat-label { font-size: 10.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .collect-stat-value { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.3; }
+        .collect-stat-countdown .collect-stat-value { font-size: 20px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+        /* ── Collect Log table ── */
+        .collect-log-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
+        .collect-log-table th { background: #0f172a; color: #94a3b8; padding: 7px 10px; text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid #334155; }
+        .collect-log-table td { padding: 7px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0; }
+        .collect-log-table tr:hover td { background: #1e293b; }
+        .log-badge { display:inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+        .log-badge-success { background:#14532d; color:#4ade80; }
+        .log-badge-failed  { background:#450a0a; color:#f87171; }
+        .log-badge-auto    { background:#1e3a5f; color:#7dd3fc; }
+        .log-badge-manual  { background:#3b1f6e; color:#c4b5fd; }
+
+        /* ── Collect Log Modal ── */
+        .clog-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:1100; align-items:center; justify-content:center; }
+        .clog-modal-overlay.active { display:flex; }
+        .clog-modal-box { background:#1e293b; border:1px solid #334155; border-radius:14px; width:92%; max-width:1000px; max-height:82vh; display:flex; flex-direction:column; }
+        .clog-modal-header { display:flex; align-items:center; justify-content:space-between; padding:16px 22px; border-bottom:1px solid #334155; }
+        .clog-modal-header h3 { margin:0; font-size:16px; color:#f1f5f9; }
+        .clog-modal-body { overflow-y:auto; padding:18px 22px; }
+        .collect-error {
+            display: none;
+            margin-top: 10px;
+            padding: 8px 14px;
+            background: #fee2e2;
+            border-left: 4px solid var(--danger);
+            border-radius: 6px;
+            font-size: 12.5px;
+            color: #7f1d1d;
+        }
+
+        /* ── Tag/chip ── */
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11.5px;
+            font-weight: 600;
+        }
+        .tag-success { background: #dcfce7; color: #166534; }
+        .tag-failed  { background: #fee2e2; color: #991b1b; }
+        .tag-timeout { background: #fef3c7; color: #92400e; }
+        .tag-default { background: #f1f5f9; color: #475569; }
+
+        /* ── Clickable metric ── */
+        .metric-mini-clickable { cursor: pointer; transition: filter .15s, box-shadow .15s, transform .12s; }
+        .metric-mini-clickable:hover { filter: brightness(1.15) saturate(1.1); box-shadow: 0 0 0 2px rgba(255,255,255,.5), 0 6px 18px rgba(0,0,0,.25); transform: translateY(-1px); }
+        .metric-mini-clickable .metric-mini-value { text-decoration: none; }
+
+        /* ── Drilldown modal ── */
+        .modal-overlay {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,.65);
+            z-index: 1000;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 50px;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-box {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 14px;
+            width: 94%;
+            max-width: 1150px;
+            max-height: 82vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,.5);
+        }
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid #334155;
+            flex-shrink: 0;
+        }
+        .modal-header h3 { margin: 0; font-size: 1rem; color: #e2e8f0; }
+        .modal-close {
+            background: none; border: none;
+            color: #94a3b8; font-size: 1.4rem;
+            cursor: pointer; line-height: 1; padding: 0 4px;
+        }
+        .modal-close:hover { color: #e2e8f0; }
+        .modal-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+        /* 深色主题覆盖: 模态框内表格独立样式 */
+        .modal-body table { font-size: .82rem; width: 100%; border-collapse: collapse; }
+        .modal-body table thead th {
+            background: #0f172a;
+            color: #94a3b8;
+            border-bottom: 1px solid #334155;
+            padding: 9px 12px;
+            font-size: 11.5px;
+            text-transform: uppercase;
+            letter-spacing: .4px;
+        }
+        .modal-body table tbody td {
+            padding: 9px 12px;
+            border-bottom: 1px solid #1e293b;
+            color: #e2e8f0;
+            background: #0f172a;
+            vertical-align: middle;
+        }
+        .modal-body table tbody tr:hover td { background: #1e293b; }
+        .modal-body table tbody tr:last-child td { border-bottom: none; }
+        .modal-body strong { color: #93c5fd; }
+        .status-filter-bar {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            padding: 7px 12px;
+            background: rgba(99,179,237,.1);
+            border: 1px solid rgba(99,179,237,.25);
+            border-radius: 8px;
+            font-size: .85rem;
+            color: #93c5fd;
+        }
+        .status-filter-bar.visible { display: flex; }
+        .status-filter-clear {
+            margin-left: auto;
+            background: none;
+            border: 1px solid rgba(99,179,237,.4);
+            border-radius: 5px;
+            color: #93c5fd;
+            cursor: pointer;
+            font-size: .78rem;
+            padding: 2px 8px;
+        }
+        .status-filter-clear:hover { background: rgba(99,179,237,.15); }
+
+        /* ── Responsive ── */
+        @media (max-width: 1100px) {
+            .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+            .metric-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media (max-width: 780px) {
+            .sidebar { width: 60px; }
+            .sidebar-logo-text, .nav-icon + span, .sidebar-footer, .nav-section-title { display: none; }
+            .main-wrap { margin-left: 60px; }
+            .kpi-strip { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<nav class="sidebar">
+    <div class="sidebar-logo">
+        <!-- MSPBots official logo -->
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="36" height="36" rx="8" fill="#0ea5e9"/>
+            <path d="M8 24V14a2 2 0 0 1 2-2h4l4 4 4-4h4a2 2 0 0 1 2 2v10H8z" fill="white" opacity="0.9"/>
+            <rect x="13" y="18" width="2" height="2" rx="1" fill="#0ea5e9"/>
+            <rect x="21" y="18" width="2" height="2" rx="1" fill="#0ea5e9"/>
+            <path d="M15 22h6" stroke="#0ea5e9" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M18 8v4M15 10l3-2 3 2" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="sidebar-logo-text">
+            <span class="sidebar-logo-title">MSPBots</span>
+            <span class="sidebar-logo-sub">SQL Gateway</span>
+        </div>
+    </div>
+
+    <div class="sidebar-nav">
+        <div class="nav-section-title">主要功能</div>
+        <button class="tab-button active" onclick="switchTab('resource', this)">
+            <span class="nav-icon">🖥️</span><span>资源统计</span>
+        </button>
+        <button class="tab-button" onclick="switchTab('alerts', this)">
+            <span class="nav-icon">⚠️</span><span>告警中心</span>
+        </button>
+        <div class="nav-section-title" style="margin-top:8px;">监控面板</div>
+        <button class="tab-button" onclick="switchTab('overview', this)">
+            <span class="nav-icon">📊</span><span>概览</span>
+        </button>
+        <button class="tab-button" onclick="switchTab('tenants', this)">
+            <span class="nav-icon">🥇</span><span>租户排行</span>
+        </button>
+        <button class="tab-button" onclick="switchTab('slow', this)">
+            <span class="nav-icon">⏱️</span><span>慢查询</span>
+        </button>
+        <button class="tab-button" onclick="switchTab('traffic', this)">
+            <span class="nav-icon">⚡</span><span>高流量</span>
+        </button>
+        <button class="tab-button" onclick="switchTab('timeline', this)">
+            <span class="nav-icon">📅</span><span>时间线</span>
+        </button>
+        <button class="tab-button" onclick="switchTab('cache', this)">
+            <span class="nav-icon">💡</span><span>缓存分析</span>
+        </button>
+        <button class="tab-button" onclick="switchTab('collectlog', this)">
+            <span class="nav-icon">📋</span><span>采集日志</span>
+        </button>
+    </div>
+
+    <div class="sidebar-footer">MSPBots Gateway v2.0</div>
+</nav>
+
+<!-- ══════════════ MAIN ══════════════ -->
+<div class="main-wrap">
+
+    <!-- Top bar -->
+    <div class="topbar">
+        <span class="topbar-title" id="topbarTitle">概览</span>
+        <div class="topbar-right">
+            <span id="statusIndicator" class="status-badge">正在连接...</span>
+            <span>最后更新: <strong id="lastUpdate">-</strong></span>
+            <button class="btn-refresh" onclick="refreshAllData()">↻ 刷新</button>
+        </div>
+    </div>
+
+    <div class="page-content">
+
+        <!-- KPI strip -->
+        <div class="kpi-strip">
+            <div class="kpi-card kpi-clickable" onclick="openDrilldownModal('all','全部SQL明细')" title="点击查看全部SQL明细">
+                <div class="kpi-icon">🔢</div>
+                <div>
+                    <div class="kpi-label">总查询数</div>
+                    <div class="kpi-value" id="totalQueries">-</div>
+                </div>
+            </div>
+            <div class="kpi-card kpi-clickable" onclick="openDrilldownModal('io','最高IO查询 Top 50')" title="点击查看最高IO查询">
+                <div class="kpi-icon">📦</div>
+                <div>
+                    <div class="kpi-label">总流量</div>
+                    <div class="kpi-value" id="totalTraffic">-</div>
+                </div>
+            </div>
+            <div class="kpi-card kpi-clickable" onclick="openDrilldownModal('exec_time','执行时间排行 Top 50')" title="点击查看执行时间排行">
+                <div class="kpi-icon">⏱</div>
+                <div>
+                    <div class="kpi-label">平均执行时间</div>
+                    <div class="kpi-value" id="avgTime">-</div>
+                </div>
+            </div>
+            <div class="kpi-card kpi-clickable" onclick="openDrilldownModal('failed','失败/异常记录')" title="点击查看失败异常记录">
+                <div class="kpi-icon">⚡</div>
+                <div>
+                    <div class="kpi-label">缓存命中率</div>
+                    <div class="kpi-value" id="cacheRate">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── 概览 ── -->
+        <div id="overview" class="tab-content">
+            <div class="grid">
+                <div class="card full-width">
+                    <h3>📊 时间线统计（近 7 天）</h3>
+                    <div class="chart-container">
+                        <canvas id="timelineChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>🍩 租户查询分布</h3>
+                    <div class="chart-container">
+                        <canvas id="tenantPieChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>⚡ 缓存快览</h3>
+                    <div class="chart-container">
+                        <canvas id="timeDistributionChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── 租户排行 ── -->
+        <div id="tenants" class="tab-content">
+            <div class="card">
+                <h3>🥇 租户流量排行 TOP 20</h3>
+                <div id="tenantTableLoading" class="loading">加载中...</div>
+                <table id="tenantTable" style="display:none;">
+                    <thead>
+                        <tr>
+                            <th>排名</th>
+                            <th>租户代码</th>
+                            <th>查询数</th>
+                            <th>总流量</th>
+                            <th>平均时间 (ms)</th>
+                            <th>总行数</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tenantTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ── 慢查询 ── -->
+        <div id="slow" class="tab-content">
+            <div class="card">
+                <h3>� TOP 10 慢查询</h3>
+                <div id="slowTableLoading" class="loading">加载中...</div>
+                <table id="slowTable" style="display:none;">
+                    <thead>
+                        <tr>
+                            <th>排名</th>
+                            <th>租户</th>
+                            <th>执行时间</th>
+                            <th>返回行数</th>
+                            <th>SQL 预览</th>
+                        </tr>
+                    </thead>
+                    <tbody id="slowTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ── 高流量 ── -->
+        <div id="traffic" class="tab-content">
+            <div class="card">
+                <h3>⚡ TOP 10 高流量查询</h3>
+                <div id="trafficTableLoading" class="loading">加载中...</div>
+                <table id="trafficTable" style="display:none;">
+                    <thead>
+                        <tr>
+                            <th>排名</th>
+                            <th>租户</th>
+                            <th>流量 (MB)</th>
+                            <th>查询代价</th>
+                            <th>预估行数</th>
+                            <th>SQL 预览</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trafficTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ── 时间线 ── -->
+        <div id="timeline" class="tab-content">
+            <div class="card">
+                <h3>� 7 天时间线统计（逐小时）</h3>
+                <div class="chart-container" style="height:340px;">
+                    <canvas id="detailedTimelineChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── 缓存分析 ── -->
+        <div id="cache" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <h3>�️ 缓存命中率</h3>
+                    <div class="chart-container">
+                        <canvas id="cacheChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>⏱️ 缓存节省时间</h3>
+                    <div class="stat-box">
+                        <div class="stat-label">预计节省时间</div>
+                        <div class="stat-value" id="savedTime">-</div>
+                        <div class="stat-label" id="savedTimeDetail">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── 资源计费 ── -->
+        <div id="resource" class="tab-content active">
+            <div class="grid">
+
+                <!-- 采集状态 -->
+                <div class="card full-width">
+                    <div class="collect-card-header">
+                        <h3 style="margin:0;">🔄 实时采集状态</h3>
+                        <button id="collectNowBtn" class="btn-collect" onclick="triggerCollectNow()">▶ 立即采集</button>
+                    </div>
+                    <div class="collect-stats-grid">
+                        <div class="collect-stat-block clickable" onclick="openCollectLogModal('all','全部采集日志')" title="点击查看全部采集日志">
+                            <span class="collect-stat-label">采集状态</span>
+                            <span class="collect-stat-value" id="collectRunning">-</span>
+                        </div>
+                        <div class="collect-stat-block clickable" onclick="openCollectLogModal('all','全部采集日志')" title="点击查看采集日志">
+                            <span class="collect-stat-label">上次采集时间</span>
+                            <span class="collect-stat-value" id="collectLastRunAt">-</span>
+                        </div>
+                        <div class="collect-stat-block clickable" onclick="openCollectLogModal('all','全部采集日志')" title="点击查看累计日志">
+                            <span class="collect-stat-label">累计采集条数</span>
+                            <span class="collect-stat-value" id="collectTotalCollected">-</span>
+                        </div>
+                        <div class="collect-stat-block clickable" onclick="openCollectLogModal('failed','失败采集记录')" title="点击查看失败记录">
+                            <span class="collect-stat-label">上次：新增成功/失败</span>
+                            <span class="collect-stat-value" id="collectLastResult">-</span>
+                        </div>
+                        <div class="collect-stat-block clickable" onclick="openCollectLogModal('auto','自动触发日志')" title="点击查看自动采集日志">
+                            <span class="collect-stat-label">自动间隔</span>
+                            <span class="collect-stat-value" id="collectInterval">-</span>
+                        </div>
+                        <div class="collect-stat-block collect-stat-countdown">
+                            <span class="collect-stat-label">下次采集倒计时</span>
+                            <span class="collect-stat-value" id="collectCountdown">-</span>
+                        </div>
+                    </div>
+                    <div class="collect-error" id="collectError"></div>
+                </div>
+
+                <!-- 资源统计 + SQL请求状态分布 同行 -->
+                <div class="full-width" style="display:flex;gap:18px;align-items:stretch;">
+
+                    <!-- 左：资源消耗总览 -->
+                    <div class="card" style="flex:3;min-width:0;">
+                        <h3>📊 资源消耗总览</h3>
+                        <div class="metric-grid" style="margin-top:14px;">
+                            <div class="metric-mini metric-mini-clickable" onclick="openDrilldownModal('all','全部SQL明细')" title="点击查看详情">
+                                <div class="metric-mini-label">SQL条数</div>
+                                <div class="metric-mini-value" id="resourceSqlCount">-</div>
+                            </div>
+                            <div class="metric-mini metric-mini-clickable" onclick="openDrilldownModal('tenant','租户资源排行')" title="点击查看详情">
+                                <div class="metric-mini-label">租户数</div>
+                                <div class="metric-mini-value" id="resourceTenantCount">-</div>
+                            </div>
+                            <div class="metric-mini metric-mini-clickable" onclick="openDrilldownModal('io','最高IO查询 Top 50')" title="点击查看详情">
+                                <div class="metric-mini-label">总IO</div>
+                                <div class="metric-mini-value" id="resourceIoTotal">-</div>
+                            </div>
+                            <div class="metric-mini metric-mini-clickable" onclick="openDrilldownModal('costs','最高成本查询 Top 50')" title="点击查看详情">
+                                <div class="metric-mini-label">总成本</div>
+                                <div class="metric-mini-value" id="resourceCostsTotal">-</div>
+                            </div>
+                        </div>
+                        <div class="metric-grid" style="margin-top:10px;">
+                            <div class="metric-mini metric-mini-clickable" onclick="openDrilldownModal('rows','最高行数查询 Top 50')" title="点击查看详情">
+                                <div class="metric-mini-label">总行数</div>
+                                <div class="metric-mini-value" id="resourceRowsTotal">-</div>
+                            </div>
+                            <div class="metric-mini metric-mini-clickable" onclick="openDrilldownModal('cpu','最高CPU查询 Top 50')" title="点击查看详情">
+                                <div class="metric-mini-label">总CPU时间</div>
+                                <div class="metric-mini-value" id="resourceCpuTotal">-</div>
+                            </div>
+                            <div class="metric-mini metric-mini-clickable" onclick="openDrilldownModal('exec_time','执行时间排行 Top 50')" title="点击查看详情">
+                                <div class="metric-mini-label">平均执行时间</div>
+                                <div class="metric-mini-value" id="resourceAvgExec">-</div>
+                            </div>
+                            <div class="metric-mini metric-mini-clickable" onclick="openDrilldownModal('failed','失败/异常记录')" title="点击查看失败记录">
+                                <div class="metric-mini-label">成功率</div>
+                                <div class="metric-mini-value" id="resourceSuccessRate">-</div>
+                            </div>
+                        </div>
+                        <div id="resourceHint" class="refresh-info" style="text-align:left;margin-top:8px;">
+                            数据来源: public.gateway_sql_resource_usage
+                        </div>
+                    </div>
+
+                    <!-- 右：SQL请求状态分布饼图 -->
+                    <div class="card" style="flex:2;min-width:260px;display:flex;flex-direction:column;">
+                        <h3>🎯 SQL请求状态分布</h3>
+                        <div style="flex:1;display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:center;margin-top:8px;">
+                            <div style="position:relative;width:200px;height:200px;flex-shrink:0;">
+                                <canvas id="statusPieChart"></canvas>
+                                <div id="statusPieEmpty" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;color:#475569;font-size:.9rem;">暂无数据</div>
+                            </div>
+                            <div id="statusPieLegend" style="flex:1;min-width:140px;"></div>
+                        </div>
+                        <div style="font-size:.78rem;color:#64748b;margin-top:10px;">💡 点击扇区可在下方明细中按状态筛选</div>
+                    </div>
+
+                </div>
+
+                <!-- 租户资源消耗柱状图 -->
+                <div class="card full-width">
+                    <h3>📊 租户资源消耗 Top 10</h3>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center;">
+                        <label style="color:#94a3b8;font-size:.85rem;">指标：</label>
+                        <select id="tenantBarMetric" onchange="renderTenantBarChart()" style="padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;font-size:.85rem;">
+                            <option value="sql_count">查询次数</option>
+                            <option value="io_total_mb">总IO (MB)</option>
+                            <option value="total_cpu_ms">总CPU时间 (ms)</option>
+                            <option value="total_rows">总行数</option>
+                            <option value="total_costs">总成本</option>
+                        </select>
+                    </div>
+                    <div style="position:relative;height:260px;">
+                        <canvas id="tenantBarChart"></canvas>
+                        <div id="tenantBarEmpty" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;color:#475569;font-size:.9rem;">暂无数据</div>
+                    </div>
+                </div>
+
+                <div class="card full-width">
+                    <h3>🥇 租户资源排行</h3>
+                    <div id="resourceTenantLoading" class="loading">加载中...</div>
+                    <table id="resourceTenantTable" style="display:none;">
+                        <thead>
+                            <tr>
+                                <th>排名</th><th>租户</th><th>SQL数</th>
+                                <th>总IO(MB)</th><th>总CPU(ms)</th><th>总行数</th><th>总成本</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resourceTenantBody"></tbody>
+                    </table>
+                </div>
+
+                <!-- 最近资源明细 -->
+                <div class="card full-width">
+                    <h3>� 最近资源明细</h3>
+                    <div id="statusFilterBar" class="status-filter-bar">
+                        <span>🔎 当前筛选状态：</span>
+                        <span id="statusFilterLabel" style="font-weight:600;"></span>
+                        <button class="status-filter-clear" onclick="clearStatusFilter()">✕ 清除筛选</button>
+                    </div>
+                    <div id="resourceRecentLoading" class="loading">加载中...</div>
+                    <table id="resourceRecentTable" style="display:none;">
+                        <thead>
+                            <tr>
+                                <th>请求ID</th><th>租户</th><th>数据集</th><th>状态</th>
+                                <th>Rows</th><th>IO(MB)</th><th>CPU(ms)</th><th>Cost</th><th>分析时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resourceRecentBody"></tbody>
+                    </table>
+                    <!-- 最近明细分页 -->
+                    <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:12px;font-size:13px;">
+                        <button id="recentPrevBtn" onclick="recentChangePage(-1)"
+                            style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:4px 14px;cursor:pointer;" disabled>◀ 上一页</button>
+                        <span id="recentPageInfo" style="color:#94a3b8;">-</span>
+                        <button id="recentNextBtn" onclick="recentChangePage(1)"
+                            style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:4px 14px;cursor:pointer;" disabled>下一页 ▶</button>
+                    </div>
+                </div>
+
+                <!-- 资源使用查询 -->
+                <div class="card full-width">
+                    <h3>📊 资源使用查询（时间窗口汇总）</h3>
+                    <div class="filter-row">
+                        <div class="filter-group">
+                            <label>开始日期</label>
+                            <input type="date" id="billingStartDate">
+                        </div>
+                        <div class="filter-group">
+                            <label>结束日期</label>
+                            <input type="date" id="billingEndDate">
+                        </div>
+                        <div class="filter-group">
+                            <label>粒度</label>
+                            <select id="billingGranularity">
+                                <option value="day">按天</option>
+                                <option value="month">按月</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>租户（可选）</label>
+                            <input type="text" id="billingTenantCode" placeholder="全部" style="width:130px;">
+                        </div>
+                        <div class="filter-group">
+                            <label>数据集（可选）</label>
+                            <input type="text" id="billingDatasetId" placeholder="全部" style="width:130px;">
+                        </div>
+                        <button class="btn-primary" onclick="loadBillingSummary()">查 询</button>
+                    </div>
+                    <canvas id="billingTrendChart" height="80"></canvas>
+                    <div id="billingTableWrap" style="margin-top:16px;">
+                        <table id="billingTable" style="display:none;">
+                            <thead>
+                                <tr>
+                                    <th>时间分桶</th><th>租户</th><th>数据集</th><th>SQL数</th>
+                                    <th>总IO(MB)</th><th>总CPU(ms)</th><th>总行数</th><th>总成本</th>
+                                    <th>成功数</th><th>失败数</th>
+                                </tr>
+                            </thead>
+                            <tbody id="billingTableBody"></tbody>
+                        </table>
+                        <div id="billingEmpty" style="display:none;text-align:center;color:#94a3b8;padding:20px;">暂无计费数据</div>
+                        <!-- 资源使用分页 -->
+                        <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:12px;font-size:13px;">
+                            <button id="billingPrevBtn" onclick="billingChangePage(-1)"
+                                style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:4px 14px;cursor:pointer;" disabled>◀ 上一页</button>
+                            <span id="billingPageInfo" style="color:#94a3b8;"></span>
+                            <button id="billingNextBtn" onclick="billingChangePage(1)"
+                                style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:4px 14px;cursor:pointer;" disabled>下一页 ▶</button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ── 采集日志 ── -->
+        <div id="collectlog" class="tab-content">
+            <div class="grid">
+                <div class="card full-width">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                        <h3 style="margin:0;">📋 采集日志明细</h3>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <select id="collectLogFilter" onchange="loadCollectLogs()" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:4px 10px;font-size:12px;">
+                                <option value="">全部</option>
+                                <option value="status=SUCCESS">仅成功</option>
+                                <option value="status=FAILED">仅失败</option>
+                                <option value="trigger=manual">手动触发</option>
+                                <option value="trigger=auto">自动触发</option>
+                            </select>
+                            <button onclick="loadCollectLogs()" class="btn-refresh" style="padding:4px 12px;font-size:12px;">↻ 刷新</button>
+                        </div>
+                    </div>
+                    <table class="collect-log-table">
+                        <thead><tr>
+                            <th>#</th><th>采集时间</th><th>触发方式</th><th>状态</th>
+                            <th>批次</th><th>获取数</th><th>成功</th><th>失败</th><th>耗时(ms)</th><th>错误信息</th>
+                        </tr></thead>
+                        <tbody id="collectLogBody"><tr><td colspan="10" style="text-align:center;color:#64748b;padding:20px;">加载中...</td></tr></tbody>
+                    </table>
+                    <!-- 分页 -->
+                    <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:12px;font-size:13px;">
+                        <button id="collectLogPrevBtn" onclick="collectLogChangePage(-1)"
+                            style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:4px 14px;cursor:pointer;" disabled>◀ 上一页</button>
+                        <span id="collectLogPageInfo" style="color:#94a3b8;">-</span>
+                        <button id="collectLogNextBtn" onclick="collectLogChangePage(1)"
+                            style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:4px 14px;cursor:pointer;" disabled>下一页 ▶</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── 告警中心 ── -->
+        <div id="alerts" class="tab-content">
+            <div class="grid">
+
+                <!-- 告警统计卡片 -->
+                <div class="card kpi-clickable" onclick="openAlertDetail('slow')" title="点击查看慢查询告警明细" style="cursor:pointer;">
+                    <h3>🐢 慢查询告警</h3>
+                    <div class="stat-value" id="alertSlowCount" style="font-size:2.4rem;">-</div>
+                    <div class="stat-label">最近24小时 · 点击查看明细</div>
+                </div>
+                <div class="card kpi-clickable" onclick="openAlertDetail('high')" title="点击查看高频查询告警明细" style="cursor:pointer;">
+                    <h3>⚡ 高频查询告警</h3>
+                    <div class="stat-value" id="alertHighCount" style="font-size:2.4rem;">-</div>
+                    <div class="stat-label">最近24小时 · 点击查看明细</div>
+                </div>
+                <div class="card kpi-clickable" onclick="openAlertDetail('teams')" title="点击查看 Teams 推送记录" style="cursor:pointer;">
+                    <h3>📣 Teams 已推送</h3>
+                    <div class="stat-value" id="alertTeamsCount" style="font-size:2.4rem;">-</div>
+                    <div class="stat-label">最近24小时 · 点击查看明细</div>
+                </div>
+
+                <!-- 告警趋势图 -->
+                <div class="card full-width">
+                    <h3>📈 告警趋势（最近24小时）</h3>
+                    <div style="position:relative;height:220px;">
+                        <canvas id="alertTrendChart"></canvas>
+                        <div id="alertTrendEmpty" style="display:none;position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#475569;font-size:.9rem;">暂无告警记录</div>
+                    </div>
+                </div>
+
+                <!-- 筛选 + 告警明细表 -->
+                <div class="card full-width">
+                    <h3>📋 告警明细</h3>
+                    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+                        <select id="alertTypeFilter" onchange="loadAlerts()" style="padding:6px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;">
+                            <option value="">全部类型</option>
+                            <option value="SLOW_QUERY">慢查询</option>
+                            <option value="HIGH_FREQUENCY">高频查询</option>
+                        </select>
+                        <input id="alertTenantFilter" placeholder="租户代码..." oninput="loadAlerts()"
+                               style="padding:6px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;width:160px;" />
+                        <select id="alertHoursFilter" onchange="loadAlerts()" style="padding:6px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;">
+                            <option value="1">最近1小时</option>
+                            <option value="6">最近6小时</option>
+                            <option value="24" selected>最近24小时</option>
+                            <option value="72">最近3天</option>
+                        </select>
+                        <span id="alertCount" style="color:#94a3b8;font-size:.85rem;"></span>
+                        <span id="alertTeamsTag" style="display:none;padding:3px 10px;border-radius:12px;background:rgba(99,102,241,.25);color:#a5b4fc;font-size:.8rem;">
+                            📣 Teams 已推送
+                            <button onclick="resetAlertFilter()" style="margin-left:6px;background:none;border:none;color:#a5b4fc;cursor:pointer;font-size:.8rem;">✕ 清除</button>
+                        </span>
+                    </div>
+                    <div id="alertTableWrap">
+                        <table id="alertTable" style="display:none;">
+                            <thead>
+                                <tr>
+                                    <th>时间</th><th>类型</th><th>级别</th><th>租户</th>
+                                    <th>指标值</th><th>阈值</th><th>详情</th><th>Teams</th>
+                                </tr>
+                            </thead>
+                            <tbody id="alertTableBody"></tbody>
+                        </table>
+                        <div id="alertEmpty" style="display:none;text-align:center;color:#94a3b8;padding:20px;">暂无告警记录</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div><!-- /page-content -->
+</div><!-- /main-wrap -->
+    <script>
+        const API_BASE = `${location.protocol}//${location.host}/api`;
+        let charts = {};
+        let retryCount = 0;
+        let maxRetries = 3;
+
+        const TAB_TITLES = {
+            overview:   '概览',
+            tenants:    '租户排行',
+            slow:       '慢查询',
+            traffic:    '高流量查询',
+            timeline:   '时间线统计',
+            cache:      '缓存分析',
+            resource:   '资源统计',
+            alerts:     '告警中心',
+            collectlog: '采集日志'
+        };
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Dashboard loaded, attempting to connect to API...');
+            initBillingDateRange();
+            loadAllData();
+            // 每 30 秒自动刷新一次
+            setInterval(loadAllData, 30000);
+        });
+        
+        // 加载所有数据（带重试）
+        async function loadAllData() {
+            try {
+                const si = document.getElementById('statusIndicator');
+                si.textContent = '正在更新...';
+                si.className = 'status-badge warning';
+                
+                console.log('Loading data from API:', API_BASE);
+                
+                await Promise.all([
+                    loadSummary(),
+                    loadTenantRanking(),
+                    loadSlowQueries(),
+                    loadHighTrafficQueries(),
+                    loadTimeline(),
+                    loadCacheStats(),
+                    loadResourceUsage(),
+                    loadCollectStatus(),
+                    loadCollectLogs(),
+                    loadAlertStats(),
+                    loadAlerts()
+                ]);
+                
+                const si2 = document.getElementById('statusIndicator');
+                si2.textContent = '✓ 已连接';
+                si2.className = 'status-badge';
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('zh-CN');
+                retryCount = 0;
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                retryCount++;
+                const si3 = document.getElementById('statusIndicator');
+                si3.textContent = `✗ 连接失败 (重试 ${retryCount}/${maxRetries})`;
+                si3.className = 'status-badge error';
+                
+                // 自动重试
+                if (retryCount < maxRetries) {
+                    console.log(`Retrying in 3 seconds... (${retryCount}/${maxRetries})`);
+                    setTimeout(loadAllData, 3000);
+                } else {
+                    const si4 = document.getElementById('statusIndicator');
+                    si4.textContent = '✗ 服务不可用';
+                    si4.className = 'status-badge error';
+                }
+            }
+        }
+        
+        // 刷新所有数据
+        function refreshAllData() {
+            loadAllData();
+        }
+        
+        // 加载摘要数据
+        async function loadSummary() {
+            const response = await axios.get(`${API_BASE}/summary`);
+            const data = response.data;
+            
+            document.getElementById('totalQueries').textContent = data.total_queries.toLocaleString();
+            document.getElementById('totalTraffic').textContent = data.total_traffic_mb.toFixed(2) + ' MB';
+            document.getElementById('avgTime').textContent = data.avg_time_ms.toFixed(2) + ' ms';
+            document.getElementById('cacheRate').textContent = data.cache_hit_rate.toFixed(2) + '%';
+        }
+        
+        // 加载租户排行
+        async function loadTenantRanking() {
+            const response = await axios.get(`${API_BASE}/tenant-ranking?limit=20`);
+            const data = response.data;
+            
+            const tbody = document.getElementById('tenantTableBody');
+            tbody.innerHTML = '';
+            
+            let maxTraffic = Math.max(...data.map(d => d.total_traffic_bytes));
+            if (!maxTraffic || !isFinite(maxTraffic) || maxTraffic <= 0) maxTraffic = 1;  // 防止除0/NaN
+            // 当 io 全为 0 时改为按查询次数比例显示进度条
+            const allZeroTraffic = data.every(d => !d.total_traffic_bytes || d.total_traffic_bytes <= 0);
+            const maxForBar = allZeroTraffic ? Math.max(...data.map(d => d.query_count), 1) : maxTraffic;
+            
+            data.forEach(item => {
+                const barWidth = allZeroTraffic
+                    ? Math.round((item.query_count / maxForBar) * 100)
+                    : Math.round((item.total_traffic_bytes / maxForBar) * 100);
+                const row = `
+                    <tr>
+                        <td><span class="ranking-badge">${item.rank}</span></td>
+                        <td><strong>${item.tenant_code}</strong></td>
+                        <td>${item.query_count}</td>
+                        <td>
+                            <div class="traffic-bar" style="width: ${barWidth}%"></div>
+                            <div class="traffic-label">${item.total_traffic_mb.toFixed(3)} MB</div>
+                        </td>
+                        <td>${item.avg_time_ms.toFixed(2)}</td>
+                        <td>${item.total_rows.toLocaleString()}</td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+            
+            document.getElementById('tenantTableLoading').style.display = 'none';
+            document.getElementById('tenantTable').style.display = 'table';
+            
+            // 更新饼图
+            updateTenantPieChart(data);
+        }
+        
+        // 加载慢查询
+        async function loadSlowQueries() {
+            const response = await axios.get(`${API_BASE}/slow-queries?limit=10`);
+            const data = response.data;
+            
+            const tbody = document.getElementById('slowTableBody');
+            tbody.innerHTML = '';
+            
+            data.forEach(item => {
+                const row = `
+                    <tr>
+                        <td><span class="ranking-badge">${item.rank}</span></td>
+                        <td>${item.tenant_code}</td>
+                        <td><strong>${item.execution_time_ms.toFixed(2)} ms</strong></td>
+                        <td>${item.rows_returned}</td>
+                        <td><small>${item.sql_preview}</small></td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+            
+            document.getElementById('slowTableLoading').style.display = 'none';
+            document.getElementById('slowTable').style.display = 'table';
+        }
+        
+        // 加载高流量查询
+        async function loadHighTrafficQueries() {
+            const response = await axios.get(`${API_BASE}/high-traffic-queries?limit=10`);
+            const data = response.data;
+            
+            const tbody = document.getElementById('trafficTableBody');
+            tbody.innerHTML = '';
+            
+            data.forEach(item => {
+                const row = `
+                    <tr>
+                        <td><span class="ranking-badge">${item.rank}</span></td>
+                        <td>${item.tenant_code}</td>
+                        <td><strong>${item.traffic_mb.toFixed(4)} MB</strong></td>
+                        <td>${item.query_cost.toFixed(2)}</td>
+                        <td>${item.estimated_rows}</td>
+                        <td><small>${item.sql_preview}</small></td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+            
+            document.getElementById('trafficTableLoading').style.display = 'none';
+            document.getElementById('trafficTable').style.display = 'table';
+        }
+        
+        // 加载时间线
+        async function loadTimeline() {
+            const response = await axios.get(`${API_BASE}/timeline?group_by=hour&days=7`);
+            const data = response.data;
+            updateDetailedTimelineChart(data);
+            updateTimelineOverviewChart(data);
+        }
+
+        // 概览页时间线图
+        function updateTimelineOverviewChart(data) {
+            const ctx = document.getElementById('timelineChart').getContext('2d');
+            if (charts.timelineOverview) charts.timelineOverview.destroy();
+            charts.timelineOverview = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => d.time.substring(0, 13) + 'h'),
+                    datasets: [{
+                        label: '查询数',
+                        data: data.map(d => d.query_count),
+                        borderColor: '#2255a4',
+                        backgroundColor: 'rgba(34,85,164,0.10)',
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 3,
+                        yAxisID: 'y'
+                    }, {
+                        label: '流量 (KB)',
+                        data: data.map(d => d.traffic_kb),
+                        borderColor: '#0ea5e9',
+                        backgroundColor: 'rgba(14,165,233,0.08)',
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 3,
+                        yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { position: 'top' } },
+                    scales: {
+                        y:  { type: 'linear', position: 'left',  title: { display: true, text: '查询数' } },
+                        y1: { type: 'linear', position: 'right', title: { display: true, text: '流量(KB)' }, grid: { drawOnChartArea: false } }
+                    }
+                }
+            });
+        }
+        
+        // 加载缓存统计
+        async function loadCacheStats() {
+            const response = await axios.get(`${API_BASE}/cache-stats`);
+            const data = response.data;
+            
+            document.getElementById('savedTime').textContent = (data.saved_time_ms / 1000).toFixed(2) + 's';
+            document.getElementById('savedTimeDetail').textContent = `缓存命中 ${data.cache_hits} 次，预计节省 ${data.saved_time_ms} ms`;
+            
+            updateCacheChart(data);
+        }
+
+        // 加载资源消耗统计
+        async function loadResourceUsage() {
+            const [summaryResp, tenantResp, recentResp] = await Promise.all([
+                axios.get(`${API_BASE}/resource-summary`),
+                axios.get(`${API_BASE}/resource-tenant-ranking?limit=20`),
+                axios.get(`${API_BASE}/resource-recent?page=1&page_size=20`)
+            ]);
+
+            const summary = summaryResp.data;
+            const tenantData = tenantResp.data || [];
+            const recentPaged = recentResp.data;
+
+            document.getElementById('resourceSqlCount').textContent = (summary.total_sql_count || 0).toLocaleString();
+            document.getElementById('resourceTenantCount').textContent = (summary.total_tenants || 0).toLocaleString();
+            document.getElementById('resourceIoTotal').textContent = `${(summary.total_io_mb || 0).toFixed(2)} MB`;
+            document.getElementById('resourceCostsTotal').textContent = (summary.total_costs || 0).toFixed(2);
+            document.getElementById('resourceRowsTotal').textContent = (summary.total_rows || 0).toLocaleString();
+            document.getElementById('resourceCpuTotal').textContent = `${(summary.total_cpu_ms || 0).toFixed(2)} ms`;
+            document.getElementById('resourceAvgExec').textContent = `${(summary.avg_execution_time_ms || 0).toFixed(2)} ms`;
+
+            const successCount = summary.success_count || 0;
+            const nonSuccessCount = summary.non_success_count || 0;
+            const totalCount = successCount + nonSuccessCount;
+            const successRate = totalCount > 0 ? (successCount / totalCount * 100) : 0;
+            document.getElementById('resourceSuccessRate').textContent = `${successRate.toFixed(2)}%`;
+
+            if (summary.table_exists === false) {
+                document.getElementById('resourceHint').textContent = '提示: 未检测到 gateway_sql_resource_usage 表，请先运行采集脚本。';
+            } else {
+                document.getElementById('resourceHint').textContent = '数据来源: public.gateway_sql_resource_usage';
+            }
+
+            const tenantBody = document.getElementById('resourceTenantBody');
+            tenantBody.innerHTML = '';
+            if (tenantData.length === 0) {
+                tenantBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">暂无资源排行数据</td></tr>';
+            } else {
+                tenantData.forEach(item => {
+                    const row = `
+                        <tr>
+                            <td><span class="ranking-badge">${item.rank}</span></td>
+                            <td><strong>${item.tenant_code}</strong></td>
+                            <td>${item.sql_count.toLocaleString()}</td>
+                            <td>${item.io_total_mb.toFixed(4)}</td>
+                            <td>${item.total_cpu_ms.toFixed(2)}</td>
+                            <td>${item.total_rows.toLocaleString()}</td>
+                            <td>${item.total_costs.toFixed(2)}</td>
+                        </tr>
+                    `;
+                    tenantBody.innerHTML += row;
+                });
+            }
+            document.getElementById('resourceTenantLoading').style.display = 'none';
+            document.getElementById('resourceTenantTable').style.display = 'table';
+
+            // ── 渲染租户柱状图 ──
+            window._tenantBarData = tenantData.slice(0, 10);  // 缓存前10，供切换指标用
+            renderTenantBarChart();
+
+            // ── 渲染最近资源明细（分页）──
+            _recentPage = 1;
+            renderRecentTable(recentPaged);
+
+            // ── 加载状态分布饼图 ──
+            loadStatusBreakdown();
+        }
+
+        function renderTenantBarChart() {
+            const data   = window._tenantBarData || [];
+            const metric = document.getElementById('tenantBarMetric')?.value || 'sql_count';
+            const metricLabels = {
+                sql_count:    '查询次数',
+                io_total_mb:  '总IO (MB)',
+                total_cpu_ms: '总CPU时间 (ms)',
+                total_rows:   '总行数',
+                total_costs:  '总成本'
+            };
+            const canvasEl = document.getElementById('tenantBarChart');
+            const emptyEl  = document.getElementById('tenantBarEmpty');
+
+            if (!data.length) {
+                if (charts['tenantBar']) { charts['tenantBar'].destroy(); delete charts['tenantBar']; }
+                canvasEl.style.display = 'none';
+                emptyEl.style.display  = 'flex';
+                return;
+            }
+            canvasEl.style.display = '';
+            emptyEl.style.display  = 'none';
+
+            const sorted  = [...data].sort((a, b) => (Number(b[metric]) || 0) - (Number(a[metric]) || 0));
+            const labels  = sorted.map(d => d.tenant_code);
+            const values  = sorted.map(d => Number(d[metric]) || 0);
+            const maxVal  = Math.max(...values, 1);
+
+            // 渐变色：按比例从蓝到橙
+            const bgColors = values.map(v => {
+                const ratio = v / maxVal;
+                const r = Math.round(56  + ratio * (251 - 56));
+                const g = Math.round(189 + ratio * (146 - 189));
+                const b = Math.round(248 + ratio * (60  - 248));
+                return `rgba(${r},${g},${b},0.82)`;
+            });
+
+            const ctx = canvasEl.getContext('2d');
+            if (charts['tenantBar']) charts['tenantBar'].destroy();
+            charts['tenantBar'] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: metricLabels[metric],
+                        data: values,
+                        backgroundColor: bgColors,
+                        borderRadius: 6,
+                        borderSkipped: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => `${ctx.parsed.y.toLocaleString(undefined, {maximumFractionDigits:4})} ${metricLabels[metric]}`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#94a3b8', maxRotation: 30 },
+                            grid:  { color: 'rgba(148,163,184,.08)' }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#94a3b8', precision: 0 },
+                            grid:  { color: 'rgba(148,163,184,.08)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ===== 执行状态饼图 =====
+        async function loadStatusBreakdown() {
+            try {
+                const resp = await axios.get(`${API_BASE}/resource-status-breakdown`);
+                const data = resp.data || [];
+                renderStatusPieChart(data);
+            } catch (e) {
+                console.error('loadStatusBreakdown error', e);
+            }
+        }
+
+        function renderStatusPieChart(data) {
+            const canvasEl = document.getElementById('statusPieChart');
+            const emptyEl  = document.getElementById('statusPieEmpty');
+            const legendEl  = document.getElementById('statusPieLegend');
+            if (!canvasEl) return;
+
+            if (!data.length) {
+                if (charts['statusPie']) { charts['statusPie'].destroy(); delete charts['statusPie']; }
+                canvasEl.style.display = 'none';
+                emptyEl.style.display  = 'flex';
+                legendEl.innerHTML = '';
+                return;
+            }
+            canvasEl.style.display = '';
+            emptyEl.style.display  = 'none';
+
+            // 颜色映射
+            const colorMap = {
+                SUCCESS: 'rgba(74,222,128,.85)',
+                FAILED:  'rgba(248,113,113,.85)',
+                TIMEOUT: 'rgba(251,191,36,.85)',
+                ERROR:   'rgba(239,68,68,.85)',
+                UNKNOWN: 'rgba(148,163,184,.7)',
+            };
+            const defaultColors = [
+                'rgba(96,165,250,.85)', 'rgba(167,139,250,.85)',
+                'rgba(251,146,60,.85)', 'rgba(52,211,153,.85)',
+            ];
+            let colorIdx = 0;
+            const colors = data.map(d => colorMap[d.status] || defaultColors[colorIdx++ % defaultColors.length]);
+            const labels = data.map(d => d.status);
+            const values = data.map(d => d.count);
+            const total  = values.reduce((a, b) => a + b, 0);
+
+            const ctx = canvasEl.getContext('2d');
+            if (charts['statusPie']) charts['statusPie'].destroy();
+            charts['statusPie'] = new Chart(ctx, {
+                type: 'doughnut',
+                data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: '#1e293b', hoverOffset: 8 }] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '60%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ` ${ctx.label}: ${ctx.raw.toLocaleString()} (${(ctx.raw/total*100).toFixed(1)}%)`
+                            }
+                        }
+                    },
+                    onClick: (evt, elements) => {
+                        if (!elements.length) return;
+                        const idx = elements[0].index;
+                        const status = data[idx].status;
+                        openDrilldownModal('status:' + status, `状态详情: ${status} (${data[idx].count}条)`);
+                    }
+                }
+            });
+
+            // 渲染图例
+            legendEl.innerHTML = data.map((d, i) => `
+                <div onclick="openDrilldownModal('status:${d.status}','状态详情: ${d.status} (${d.count}条)')"
+                     style="display:flex;align-items:center;gap:8px;margin-bottom:10px;cursor:pointer;padding:6px 10px;border-radius:7px;transition:background .15s;"
+                     onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background=''">
+                    <span style="display:inline-block;width:13px;height:13px;border-radius:3px;background:${colors[i]};flex-shrink:0;"></span>
+                    <span style="color:#e2e8f0;font-size:.88rem;font-weight:600;">${d.status}</span>
+                    <span style="color:#94a3b8;font-size:.82rem;margin-left:4px;">${d.count.toLocaleString()}</span>
+                    <span style="color:#64748b;font-size:.78rem;">(${d.percentage}%)</span>
+                </div>
+            `).join('');
+        }
+
+        // ===== 状态过滤最近明细 =====
+        let _statusFilterActive = '';
+        let _recentPage = 1;
+        let _recentTotalPages = 1;
+        let _recentPageSize = 20;
+
+        function _updateRecentPager(total, page, pages) {
+            const info    = document.getElementById('recentPageInfo');
+            const prevBtn = document.getElementById('recentPrevBtn');
+            const nextBtn = document.getElementById('recentNextBtn');
+            if (info)    info.textContent = `第 ${page} / ${pages} 页（共 ${total} 条）`;
+            if (prevBtn) prevBtn.disabled = page <= 1;
+            if (nextBtn) nextBtn.disabled = page >= pages;
+            _recentTotalPages = pages;
+        }
+
+        async function filterRecentByStatus(status, label) {
+            _statusFilterActive = status;
+            _recentPage = 1;
+            const filterBar   = document.getElementById('statusFilterBar');
+            const filterLabel = document.getElementById('statusFilterLabel');
+            filterBar.classList.add('visible');
+            filterLabel.textContent = label || status;
+
+            // 滚动到最近资源明细
+            const recentCard = document.getElementById('resourceRecentTable')?.closest('.card');
+            if (recentCard) recentCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            document.getElementById('resourceRecentLoading').style.display = 'block';
+            document.getElementById('resourceRecentTable').style.display = 'none';
+            try {
+                const resp = await axios.get(`${API_BASE}/resource-recent?page=${_recentPage}&page_size=${_recentPageSize}&status=${encodeURIComponent(status)}`);
+                renderRecentTable(resp.data);
+            } catch (e) {
+                console.error('filterRecentByStatus error', e);
+            }
+        }
+
+        function clearStatusFilter() {
+            _statusFilterActive = '';
+            document.getElementById('statusFilterBar').classList.remove('visible');
+            _recentPage = 1;
+            loadResourceRecentDefault();
+        }
+
+        async function loadResourceRecentDefault() {
+            document.getElementById('resourceRecentLoading').style.display = 'block';
+            document.getElementById('resourceRecentTable').style.display = 'none';
+            try {
+                let url = `${API_BASE}/resource-recent?page=${_recentPage}&page_size=${_recentPageSize}`;
+                if (_statusFilterActive) url += `&status=${encodeURIComponent(_statusFilterActive)}`;
+                const resp = await axios.get(url);
+                renderRecentTable(resp.data);
+            } catch (e) {
+                console.error('loadResourceRecentDefault error', e);
+            }
+        }
+
+        function recentChangePage(delta) {
+            const newPage = _recentPage + delta;
+            if (newPage < 1 || newPage > _recentTotalPages) return;
+            _recentPage = newPage;
+            loadResourceRecentDefault();
+        }
+
+        function renderRecentTable(pagedData) {
+            const recentData = pagedData && pagedData.items ? pagedData.items : (Array.isArray(pagedData) ? pagedData : []);
+            const total  = pagedData && pagedData.total  != null ? pagedData.total  : recentData.length;
+            const page   = pagedData && pagedData.page   != null ? pagedData.page   : 1;
+            const pages  = pagedData && pagedData.pages  != null ? pagedData.pages  : 1;
+            _recentPage  = page;
+
+            const recentBody = document.getElementById('resourceRecentBody');
+            recentBody.innerHTML = '';
+            if (recentData.length === 0) {
+                recentBody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">暂无资源明细数据</td></tr>';
+            } else {
+                recentData.forEach(item => {
+                    const analyzedAt = item.analyzed_at ? item.analyzed_at.substring(0, 19).replace('T', ' ') : '-';
+                    const statusCls = item.execute_status === 'SUCCESS' ? 'tag tag-success' : (item.execute_status === 'TIMEOUT' ? 'tag tag-timeout' : 'tag tag-failed');
+                    recentBody.innerHTML += `
+                        <tr>
+                            <td><small>${item.request_id || '-'}</small></td>
+                            <td>${item.tenant_code || '-'}</td>
+                            <td>${item.dataset_id || '-'}</td>
+                            <td><span class="${statusCls}">${item.execute_status || '-'}</span></td>
+                            <td>${(item.rows || 0).toLocaleString()}</td>
+                            <td>${(item.io_total_mb || 0).toFixed(4)}</td>
+                            <td>${(item.cpu_time_ms || 0).toFixed(2)}</td>
+                            <td>${(item.costs || 0).toFixed(2)}</td>
+                            <td><small>${analyzedAt}</small></td>
+                        </tr>`;
+                });
+            }
+            document.getElementById('resourceRecentLoading').style.display = 'none';
+            document.getElementById('resourceRecentTable').style.display = 'table';
+            _updateRecentPager(total, page, pages);
+        }
+
+        // ===== 钻取模态框 =====
+        async function openDrilldownModal(type, title) {
+            const modal = document.getElementById('drilldownModal');
+            document.getElementById('drilldownTitle').textContent = title || '查询详情';
+            document.getElementById('drilldownLoading').style.display = 'block';
+            document.getElementById('drilldownTenantWrap').style.display = 'none';
+            document.getElementById('drilldownRecordWrap').style.display = 'none';
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+
+            try {
+                if (type === 'tenant') {
+                    const resp = await axios.get(`${API_BASE}/resource-tenant-ranking?limit=50`);
+                    renderDrilldownTenant(resp.data || []);
+                } else if (type.startsWith('status:')) {
+                    // 执行状态饼图点击 → 按状态筛选明细
+                    const statusVal = type.slice(7);
+                    const resp = await axios.get(`${API_BASE}/resource-recent?status=${encodeURIComponent(statusVal)}&limit=200`);
+                    renderDrilldownRecords(resp.data || []);
+                } else {
+                    const paramMap = {
+                        all:       '?limit=100',
+                        io:        '?sort_by=io&limit=50',
+                        costs:     '?sort_by=costs&limit=50',
+                        rows:      '?sort_by=rows&limit=50',
+                        cpu:       '?sort_by=cpu&limit=50',
+                        exec_time: '?sort_by=exec_time&limit=50',
+                        failed:    '?status=FAILED&limit=100',
+                    };
+                    const qs = paramMap[type] || '?limit=50';
+                    const resp = await axios.get(`${API_BASE}/resource-recent${qs}`);
+                    renderDrilldownRecords(resp.data || []);
+                }
+            } catch (e) {
+                document.getElementById('drilldownLoading').textContent = '加载失败: ' + (e.message || e);
+            }
+        }
+
+        function renderDrilldownTenant(data) {
+            document.getElementById('drilldownLoading').style.display = 'none';
+            document.getElementById('drilldownTenantWrap').style.display = '';
+            const tbody = document.getElementById('drilldownTenantBody');
+            if (!data.length) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">暂无数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.map(item => `
+                <tr>
+                    <td><span class="ranking-badge">${item.rank}</span></td>
+                    <td><strong>${item.tenant_code}</strong></td>
+                    <td>${(item.sql_count || 0).toLocaleString()}</td>
+                    <td>${(item.io_total_mb || 0).toFixed(4)}</td>
+                    <td>${(item.total_cpu_ms || 0).toFixed(2)}</td>
+                    <td>${(item.total_rows || 0).toLocaleString()}</td>
+                    <td>${(item.total_costs || 0).toFixed(2)}</td>
+                </tr>`).join('');
+        }
+
+        function renderDrilldownRecords(data) {
+            document.getElementById('drilldownLoading').style.display = 'none';
+            document.getElementById('drilldownRecordWrap').style.display = '';
+            const tbody = document.getElementById('drilldownBody');
+            if (!data.length) {
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#999;">暂无数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.map(item => {
+                const ts = (item.analyzed_at || item.execute_time || '').substring(0, 19).replace('T', ' ');
+                const statusCls = item.execute_status === 'SUCCESS' ? 'tag tag-success' : (item.execute_status === 'TIMEOUT' ? 'tag tag-timeout' : 'tag tag-failed');
+                return `<tr>
+                    <td><small>${item.request_id || '-'}</small></td>
+                    <td>${item.tenant_code || '-'}</td>
+                    <td>${item.dataset_id || '-'}</td>
+                    <td><span class="${statusCls}">${item.execute_status || '-'}</span></td>
+                    <td>${(item.execution_time_ms || 0).toFixed(2)}</td>
+                    <td>${(item.rows || 0).toLocaleString()}</td>
+                    <td>${(item.io_total_mb || 0).toFixed(4)}</td>
+                    <td>${(item.cpu_time_ms || 0).toFixed(2)}</td>
+                    <td>${(item.costs || 0).toFixed(2)}</td>
+                    <td><small>${ts || '-'}</small></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function closeDrilldownModal() {
+            document.getElementById('drilldownModal').classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        // ESC 关闭模态框
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrilldownModal(); });
+
+        // ===== 采集状态 =====
+        let _countdownTimer = null;  // 倒计时定时器句柄
+
+        function startCountdown(lastRunAt, intervalSec, isRunning) {
+            if (_countdownTimer) { clearInterval(_countdownTimer); _countdownTimer = null; }
+            const cdEl = document.getElementById('collectCountdown');
+            if (!cdEl) return;
+
+            if (isRunning) {
+                cdEl.textContent = '⏳ 采集中...';
+                cdEl.style.color = '#ff9800';
+                return;
+            }
+            if (!lastRunAt || !intervalSec) {
+                cdEl.textContent = '-';
+                cdEl.style.color = '';
+                return;
+            }
+
+            function calcRemaining() {
+                // lastRunAt 是 ISO UTC 字符串（末尾带Z），Date.parse 直接得到 UTC ms
+                const lastMs = new Date(lastRunAt).getTime();
+                if (isNaN(lastMs)) return intervalSec;
+                const nowMs  = Date.now();
+                const elapsedSec = Math.max(0, Math.floor((nowMs - lastMs) / 1000));
+                const remaining  = Math.max(0, intervalSec - (elapsedSec % intervalSec));
+                return remaining;
+            }
+
+            function update() {
+                const rem = calcRemaining();
+                if (rem === 0) {
+                    cdEl.textContent = '⏳ 即将采集...';
+                    cdEl.style.color = '#ff9800';
+                } else {
+                    const m = Math.floor(rem / 60);
+                    const s = rem % 60;
+                    cdEl.textContent = m > 0 ? `${m}分 ${String(s).padStart(2,'0')}秒` : `${s} 秒`;
+                    cdEl.style.color = rem <= 10 ? '#f59e0b' : '#4ade80';
+                }
+            }
+            update();
+            _countdownTimer = setInterval(update, 1000);
+        }
+
+        async function loadCollectStatus() {
+            try {
+                const resp = await axios.get(`${API_BASE}/resource-collect-status`);
+                const s = resp.data;
+
+                const runningEl = document.getElementById('collectRunning');
+                if (s.running) {
+                    runningEl.textContent = '🟡 采集中...';
+                    runningEl.style.color = '#ff9800';
+                    document.getElementById('collectNowBtn').disabled = true;
+                } else {
+                    runningEl.textContent = '🟢 空闲';
+                    runningEl.style.color = '#4CAF50';
+                    document.getElementById('collectNowBtn').disabled = false;
+                }
+
+                document.getElementById('collectLastRunAt').textContent = s.last_run_at || '尚未运行';
+                document.getElementById('collectTotalCollected').textContent = (s.total_collected || 0).toLocaleString() + ' 条';
+                document.getElementById('collectInterval').textContent = `每 ${s.interval_sec} 秒`;
+
+                if (s.last_result) {
+                    const r = s.last_result;
+                    document.getElementById('collectLastResult').textContent =
+                        `成功 ${r.success}  失败 ${r.failed}  共处理 ${r.fetched}`;
+                } else {
+                    document.getElementById('collectLastResult').textContent = '-';
+                }
+
+                const errEl = document.getElementById('collectError');
+                if (s.last_error) {
+                    errEl.textContent = '采集异常: ' + s.last_error;
+                    errEl.style.display = 'block';
+                } else {
+                    errEl.style.display = 'none';
+                }
+
+                // 启动/更新倒计时
+                startCountdown(s.last_run_at, s.interval_sec, s.running);
+            } catch (e) {
+                console.error('loadCollectStatus error', e);
+            }
+        }
+
+        async function triggerCollectNow() {
+            const btn = document.getElementById('collectNowBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ 采集中...';
+            try {
+                const resp = await axios.post(`${API_BASE}/resource-collect-now`);
+                const msg = resp.data.message || '已触发';
+                btn.textContent = '✓ ' + msg;
+                // 3 秒后持续轮询状态直到 running=false，再刷新数据
+                let polls = 0;
+                const pollTimer = setInterval(async () => {
+                    polls++;
+                    await loadCollectStatus();
+                    const s = (await axios.get(`${API_BASE}/resource-collect-status`)).data;
+                    if (!s.running || polls > 30) {
+                        clearInterval(pollTimer);
+                        btn.textContent = '▶ 立即采集';
+                        btn.disabled = false;
+                        // 刷新资源数据
+                        await loadResourceUsage();
+                    }
+                }, 2000);
+            } catch (e) {
+                btn.textContent = '▶ 立即采集';
+                btn.disabled = false;
+                alert('触发失败: ' + (e.response?.data?.message || e.message));
+            }
+        }
+
+        // ===== 采集日志 =====
+        function _renderCollectLogRows(rows, tbodyId) {
+            const tbody = document.getElementById(tbodyId);
+            if (!tbody) return;
+            if (!rows || rows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#64748b;padding:20px;">暂无记录</td></tr>';
+                return;
+            }
+            tbody.innerHTML = rows.map(r => {
+                const dt = r.collected_at ? r.collected_at.replace('T', ' ').slice(0, 19) : '-';
+                const statusBadge = r.status === 'SUCCESS'
+                    ? '<span class="log-badge log-badge-success">成功</span>'
+                    : '<span class="log-badge log-badge-failed">失败</span>';
+                const trigBadge = r.trigger_type === 'manual'
+                    ? '<span class="log-badge log-badge-manual">手动</span>'
+                    : '<span class="log-badge log-badge-auto">自动</span>';
+                const errCell = r.error_message
+                    ? `<span style="color:#f87171;font-size:11px;" title="${r.error_message}">${r.error_message.slice(0,40)}${r.error_message.length>40?'…':''}</span>`
+                    : '<span style="color:#475569;">-</span>';
+                return `<tr>
+                    <td style="color:#64748b;">${r.id}</td>
+                    <td>${dt}</td>
+                    <td>${trigBadge}</td>
+                    <td>${statusBadge}</td>
+                    <td>${r.batches ?? '-'}</td>
+                    <td>${r.fetched ?? '-'}</td>
+                    <td style="color:#4ade80;">${r.success_count ?? '-'}</td>
+                    <td style="color:#f87171;">${r.failed_count ?? '-'}</td>
+                    <td>${r.duration_ms != null ? r.duration_ms.toLocaleString() : '-'}</td>
+                    <td>${errCell}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        let _collectLogPage = 1;
+        let _collectLogTotalPages = 1;
+
+        async function loadCollectLogs(page) {
+            if (page === undefined) _collectLogPage = 1;
+            else _collectLogPage = page;
+            const filterVal = (document.getElementById('collectLogFilter')?.value || '');
+            let url = `${API_BASE}/collect-logs?page=${_collectLogPage}&page_size=20`;
+            if (filterVal) url += '&' + filterVal;
+            try {
+                const resp = await axios.get(url);
+                const data = resp.data;
+                _renderCollectLogRows(data.items || [], 'collectLogBody');
+                _collectLogTotalPages = data.pages || 1;
+                const info    = document.getElementById('collectLogPageInfo');
+                const prevBtn = document.getElementById('collectLogPrevBtn');
+                const nextBtn = document.getElementById('collectLogNextBtn');
+                if (info)    info.textContent = `第 ${_collectLogPage} / ${_collectLogTotalPages} 页（共 ${data.total || 0} 条）`;
+                if (prevBtn) prevBtn.disabled = _collectLogPage <= 1;
+                if (nextBtn) nextBtn.disabled = _collectLogPage >= _collectLogTotalPages;
+            } catch (e) {
+                const tbody = document.getElementById('collectLogBody');
+                if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#f87171;padding:20px;">加载失败: ' + (e.message||'') + '</td></tr>';
+            }
+        }
+
+        function collectLogChangePage(delta) {
+            const newPage = _collectLogPage + delta;
+            if (newPage < 1 || newPage > _collectLogTotalPages) return;
+            loadCollectLogs(newPage);
+        }
+
+        async function openCollectLogModal(filterType, title) {
+            const modal = document.getElementById('collectLogModal');
+            const loading = document.getElementById('collectLogModalLoading');
+            const table = document.getElementById('collectLogModalTable');
+            document.getElementById('collectLogModalTitle').textContent = title || '采集日志详情';
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+            loading.style.display = 'block';
+            table.style.display = 'none';
+
+            let url = `${API_BASE}/collect-logs?limit=100`;
+            if (filterType === 'failed') url += '&status=FAILED';
+            else if (filterType === 'success') url += '&status=SUCCESS';
+            else if (filterType === 'auto')   url += '&trigger=auto';
+            else if (filterType === 'manual') url += '&trigger=manual';
+
+            try {
+                const resp = await axios.get(url);
+                _renderCollectLogRows(resp.data.items || [], 'collectLogModalBody');
+                loading.style.display = 'none';
+                table.style.display = 'table';
+            } catch (e) {
+                loading.textContent = '加载失败: ' + (e.message || '');
+            }
+        }
+
+        function closeCollectLogModal() {
+            document.getElementById('collectLogModal').classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        // ESC 关闭采集日志弹窗
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCollectLogModal(); });
+
+        // ===== 资源使用查询 =====
+        let _billingPage = 1;
+        let _billingAllItems = [];
+        const BILLING_PAGE_SIZE = 20;
+
+        async function loadBillingSummary() {
+            const startDate   = document.getElementById('billingStartDate').value;
+            const endDate     = document.getElementById('billingEndDate').value;
+            const granularity = document.getElementById('billingGranularity').value;
+            const tenantCode  = document.getElementById('billingTenantCode').value.trim();
+            const datasetId   = document.getElementById('billingDatasetId').value.trim();
+
+            let url = `${API_BASE}/resource-billing-summary?start_date=${startDate}&end_date=${endDate}&granularity=${granularity}`;
+            if (tenantCode) url += `&tenant_code=${encodeURIComponent(tenantCode)}`;
+            if (datasetId)  url += `&dataset_id=${encodeURIComponent(datasetId)}`;
+
+            try {
+                const resp = await axios.get(url);
+                const result = resp.data;
+                const items  = result.items || [];
+
+                renderBillingChart(items, granularity);
+                _billingAllItems = items;
+                _billingPage = 1;
+                _renderBillingPage();
+            } catch (e) {
+                console.error('计费查询失败', e);
+            }
+        }
+
+        function renderBillingChart(items, granularity) {
+            // Aggregate by time_bucket for the cost trend line
+            const bucketMap = {};
+            items.forEach(item => {
+                if (!bucketMap[item.time_bucket]) {
+                    bucketMap[item.time_bucket] = { costs: 0, sql_count: 0, io_mb: 0 };
+                }
+                bucketMap[item.time_bucket].costs     += item.total_costs;
+                bucketMap[item.time_bucket].sql_count += item.sql_count;
+                bucketMap[item.time_bucket].io_mb     += item.total_io_mb;
+            });
+
+            const labels   = Object.keys(bucketMap).sort();
+            const costsArr = labels.map(l => bucketMap[l].costs.toFixed(4));
+            const sqlArr   = labels.map(l => bucketMap[l].sql_count);
+
+            const ctx = document.getElementById('billingTrendChart').getContext('2d');
+            if (charts.billingTrend) { charts.billingTrend.destroy(); }
+
+            charts.billingTrend = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: '总成本(Costs)',
+                            data: costsArr,
+                            backgroundColor: 'rgba(102,126,234,0.6)',
+                            borderColor: '#667eea',
+                            borderWidth: 1,
+                            yAxisID: 'yCost'
+                        },
+                        {
+                            label: 'SQL条数',
+                            data: sqlArr,
+                            type: 'line',
+                            borderColor: '#f093fb',
+                            backgroundColor: 'rgba(240,147,251,0.15)',
+                            borderWidth: 2,
+                            fill: false,
+                            yAxisID: 'yCount',
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: {
+                            display: true,
+                            text: granularity === 'day' ? '按天：成本 + SQL条数趋势' : '按月：成本 + SQL条数趋势'
+                        }
+                    },
+                    scales: {
+                        yCost:  { type: 'linear', position: 'left',  title: { display: true, text: '总成本' } },
+                        yCount: { type: 'linear', position: 'right', title: { display: true, text: 'SQL条数' }, grid: { drawOnChartArea: false } }
+                    }
+                }
+            });
+        }
+
+        function _renderBillingPage() {
+            const tableEl = document.getElementById('billingTable');
+            const emptyEl = document.getElementById('billingEmpty');
+            const tbody   = document.getElementById('billingTableBody');
+            const infoEl  = document.getElementById('billingPageInfo');
+            const prevBtn = document.getElementById('billingPrevBtn');
+            const nextBtn = document.getElementById('billingNextBtn');
+            tbody.innerHTML = '';
+
+            if (_billingAllItems.length === 0) {
+                tableEl.style.display = 'none';
+                emptyEl.style.display = 'block';
+                if (infoEl)  infoEl.textContent = '';
+                if (prevBtn) prevBtn.disabled = true;
+                if (nextBtn) nextBtn.disabled = true;
+                return;
+            }
+            emptyEl.style.display = 'none';
+            tableEl.style.display = 'table';
+
+            const total = _billingAllItems.length;
+            const pages = Math.ceil(total / BILLING_PAGE_SIZE);
+            const start = (_billingPage - 1) * BILLING_PAGE_SIZE;
+            const pageItems = _billingAllItems.slice(start, start + BILLING_PAGE_SIZE);
+
+            pageItems.forEach(item => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td><small>${item.time_bucket}</small></td>
+                        <td>${item.tenant_code}</td>
+                        <td>${item.dataset_id}</td>
+                        <td>${item.sql_count.toLocaleString()}</td>
+                        <td>${item.total_io_mb.toFixed(4)}</td>
+                        <td>${item.total_cpu_ms.toFixed(2)}</td>
+                        <td>${item.total_rows.toLocaleString()}</td>
+                        <td><strong>${item.total_costs.toFixed(4)}</strong></td>
+                        <td><span class="tag tag-success">${item.success_count}</span></td>
+                        <td>${item.failed_count > 0 ? `<span class="tag tag-failed">${item.failed_count}</span>` : item.failed_count}</td>
+                    </tr>`;
+            });
+
+            if (infoEl)  infoEl.textContent = `第 ${_billingPage} / ${pages} 页（共 ${total} 条）`;
+            if (prevBtn) prevBtn.disabled = _billingPage <= 1;
+            if (nextBtn) nextBtn.disabled = _billingPage >= pages;
+        }
+
+        function billingChangePage(delta) {
+            const pages = Math.ceil(_billingAllItems.length / BILLING_PAGE_SIZE);
+            const newPage = _billingPage + delta;
+            if (newPage < 1 || newPage > pages) return;
+            _billingPage = newPage;
+            _renderBillingPage();
+        }
+
+        function renderBillingTable(items) {
+            _billingAllItems = items;
+            _billingPage = 1;
+            _renderBillingPage();
+        }
+
+        // 初始化资源使用查询日期范围（默认过去 24 小时）
+        function initBillingDateRange() {
+            const today     = new Date();
+            const yesterday = new Date();
+            yesterday.setDate(today.getDate() - 1);
+            const fmt = d => d.toISOString().substring(0, 10);
+            document.getElementById('billingEndDate').value   = fmt(today);
+            document.getElementById('billingStartDate').value = fmt(yesterday);
+            // 自动加载一次
+            loadBillingSummary();
+        }
+
+        // 更新租户饼图
+        function updateTenantPieChart(data) {
+            const ctx = document.getElementById('tenantPieChart').getContext('2d');
+            
+            if (charts.tenantPie) {
+                charts.tenantPie.destroy();
+            }
+            
+            charts.tenantPie = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: data.map(d => d.tenant_code),
+                    datasets: [{
+                        data: data.map(d => d.query_count),
+                        backgroundColor: [
+                            '#667eea',
+                            '#764ba2',
+                            '#f093fb',
+                            '#4facfe',
+                            '#00f2fe'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 更新缓存图表
+        function updateCacheChart(data) {
+            const chartCfg = {
+                type: 'doughnut',
+                data: {
+                    labels: ['缓存命中', '缓存未命中'],
+                    datasets: [{
+                        data: [data.cache_hits, data.cache_misses],
+                        backgroundColor: ['#4CAF50', '#f44336']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#94a3b8' } },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                    const pct = total > 0 ? (ctx.raw / total * 100).toFixed(1) : 0;
+                                    return ` ${ctx.label}: ${ctx.raw} (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            // 缓存分析 tab
+            if (document.getElementById('cacheChart')) {
+                if (charts.cache) charts.cache.destroy();
+                charts.cache = new Chart(document.getElementById('cacheChart').getContext('2d'), JSON.parse(JSON.stringify(chartCfg)));
+            }
+
+            // 概览 tab - 缓存快览
+            if (document.getElementById('timeDistributionChart')) {
+                if (charts.timeDistribution) charts.timeDistribution.destroy();
+                charts.timeDistribution = new Chart(document.getElementById('timeDistributionChart').getContext('2d'), JSON.parse(JSON.stringify(chartCfg)));
+            }
+        }
+        
+        // 更新详细时间线图表
+        function updateDetailedTimelineChart(data) {
+            const ctx = document.getElementById('detailedTimelineChart').getContext('2d');
+            
+            if (charts.timeline) {
+                charts.timeline.destroy();
+            }
+            
+            charts.timeline = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => d.time.substring(0, 16)),
+                    datasets: [{
+                        label: '查询数',
+                        data: data.map(d => d.query_count),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        yAxisID: 'y'
+                    }, {
+                        label: '流量 (KB)',
+                        data: data.map(d => d.traffic_kb),
+                        borderColor: '#764ba2',
+                        backgroundColor: 'rgba(118, 75, 162, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: '查询数'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: '流量 (KB)'
+                            },
+                            grid: {
+                                drawOnChartArea: false,
+                            },
+                        }
+                    }
+                }
+            });
+        }
+
+        // ===== 告警中心 =====
+        let _alertTeamsOnly = false;  // Teams 推送过滤状态
+
+        // 点击告警统计卡片 → 设置筛选条件并滚动到明细表
+        function openAlertDetail(type) {
+            _alertTeamsOnly = false;
+            const typeFilter   = document.getElementById('alertTypeFilter');
+            const hoursFilter  = document.getElementById('alertHoursFilter');
+            if (hoursFilter) hoursFilter.value = '24';
+            if (type === 'slow') {
+                if (typeFilter) typeFilter.value = 'SLOW_QUERY';
+            } else if (type === 'high') {
+                if (typeFilter) typeFilter.value = 'HIGH_FREQUENCY';
+            } else if (type === 'teams') {
+                if (typeFilter) typeFilter.value = '';
+                _alertTeamsOnly = true;
+            }
+            loadAlerts();
+            // 滚动到告警明细区域
+            const el = document.getElementById('alertTableWrap');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // 重置告警筛选
+        function resetAlertFilter() {
+            _alertTeamsOnly = false;
+            const typeFilter = document.getElementById('alertTypeFilter');
+            if (typeFilter) typeFilter.value = '';
+            document.getElementById('alertTeamsTag').style.display = 'none';
+            loadAlerts();
+        }
+
+        async function loadAlertStats() {
+            try {
+                const resp = await axios.get(`${API_BASE}/alert-stats`);
+                const data = resp.data;
+
+                // 汇总卡片
+                let slowTotal = 0, highTotal = 0, teamsTotal = 0;
+                (data.by_type || []).forEach(row => {
+                    if (row.alert_type === 'SLOW_QUERY') {
+                        slowTotal  = row.total;
+                        teamsTotal += row.teams_notified || 0;
+                    } else if (row.alert_type === 'HIGH_FREQUENCY') {
+                        highTotal  = row.total;
+                        teamsTotal += row.teams_notified || 0;
+                    }
+                });
+                document.getElementById('alertSlowCount').textContent  = slowTotal;
+                document.getElementById('alertHighCount').textContent  = highTotal;
+                document.getElementById('alertTeamsCount').textContent = teamsTotal;
+
+                // 趋势图
+                const hourly = data.hourly || [];
+                const emptyEl = document.getElementById('alertTrendEmpty');
+                const canvasEl = document.getElementById('alertTrendChart');
+
+                // 无数据时生成24小时全0占位
+                let displayHourly = hourly;
+                if (!hourly.length) {
+                    const now = new Date();
+                    displayHourly = Array.from({length: 24}, (_, i) => {
+                        const h = new Date(now.getTime() - (23 - i) * 3600000);
+                        return { hour_label: String(h.getHours()).padStart(2,'0') + ':00', slow_query: 0, high_frequency: 0 };
+                    });
+                }
+                {
+                    canvasEl.style.display = '';
+                    emptyEl.style.display  = 'none';
+                    const labels   = displayHourly.map(r => r.hour_label);
+                    const slowData = displayHourly.map(r => Number(r.slow_query)    || 0);
+                    const highData = displayHourly.map(r => Number(r.high_frequency) || 0);
+
+                    const ctx = canvasEl.getContext('2d');
+                    if (charts['alertTrend']) charts['alertTrend'].destroy();
+                    charts['alertTrend'] = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels,
+                            datasets: [
+                                {
+                                    label: '慢查询告警',
+                                    data: slowData,
+                                    backgroundColor: 'rgba(239,68,68,0.75)',
+                                    borderRadius: 4,
+                                    stack: 'alerts'
+                                },
+                                {
+                                    label: '高频查询告警',
+                                    data: highData,
+                                    backgroundColor: 'rgba(251,146,60,0.75)',
+                                    borderRadius: 4,
+                                    stack: 'alerts'
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { labels: { color: '#94a3b8' } },
+                                tooltip: { mode: 'index', intersect: false }
+                            },
+                            scales: {
+                                x: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.08)' } },
+                                y: { stacked: true, beginAtZero: true, ticks: { color: '#94a3b8', precision: 0 }, grid: { color: 'rgba(148,163,184,.08)' } }
+                            }
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error('loadAlertStats error', e);
+            }
+        }
+
+        async function loadAlerts() {
+            try {
+                const alertType  = document.getElementById('alertTypeFilter')?.value  || '';
+                const tenantCode = document.getElementById('alertTenantFilter')?.value || '';
+                const hours      = document.getElementById('alertHoursFilter')?.value  || 24;
+
+                let url = `${API_BASE}/alerts?limit=100&hours=${hours}`;
+                if (alertType)  url += `&alert_type=${encodeURIComponent(alertType)}`;
+                if (tenantCode) url += `&tenant_code=${encodeURIComponent(tenantCode)}`;
+                if (_alertTeamsOnly) url += `&notified_teams=true`;
+
+                // 同步 Teams 标签显隐
+                const teamsTagEl = document.getElementById('alertTeamsTag');
+                if (teamsTagEl) teamsTagEl.style.display = _alertTeamsOnly ? '' : 'none';
+
+                const resp = await axios.get(url);
+                const rows = resp.data.alerts || [];
+
+                const tbody = document.getElementById('alertTableBody');
+                const table = document.getElementById('alertTable');
+                const empty = document.getElementById('alertEmpty');
+                const countEl = document.getElementById('alertCount');
+
+                if (countEl) countEl.textContent = `共 ${rows.length} 条`;
+
+                if (!rows.length) {
+                    table.style.display = 'none';
+                    empty.style.display = 'block';
+                    return;
+                }
+                table.style.display = '';
+                empty.style.display = 'none';
+
+                const typeLabel = { SLOW_QUERY: '🐢 慢查询', HIGH_FREQUENCY: '🔥 高频' };
+                const levelBadge = level => `<span style="padding:2px 7px;border-radius:4px;font-size:.78rem;background:${level==='CRITICAL'?'rgba(220,38,38,.3)':'rgba(234,179,8,.25)'};color:${level==='CRITICAL'?'#fca5a5':'#fde047'}">${level}</span>`;
+
+                tbody.innerHTML = rows.map(r => `
+                    <tr>
+                        <td style="white-space:nowrap">${r.created_at}</td>
+                        <td>${typeLabel[r.alert_type] || r.alert_type}</td>
+                        <td>${levelBadge(r.alert_level)}</td>
+                        <td>${r.tenant_code || '-'}</td>
+                        <td>${(r.metric_value ?? '-')} ${r.metric_unit || ''}</td>
+                        <td>${(r.threshold_value ?? '-')} ${r.metric_unit || ''}</td>
+                        <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(r.detail||'').replace(/"/g,'&quot;')}">${r.detail || '-'}</td>
+                        <td>${r.notified_teams ? '✅' : '—'}</td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                console.error('loadAlerts error', e);
+            }
+        }
+
+        // 切换标签
+        function switchTab(tabName, btn) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            (btn || event.target).classList.add('active');
+            const titleEl = document.getElementById('topbarTitle');
+            if (titleEl) titleEl.textContent = TAB_TITLES[tabName] || tabName;
+        }
+    </script>
+
+    <!-- 采集日志弹窗 -->
+    <div id="collectLogModal" class="clog-modal-overlay" onclick="if(event.target===this)closeCollectLogModal()">
+        <div class="clog-modal-box">
+            <div class="clog-modal-header">
+                <h3 id="collectLogModalTitle">采集日志详情</h3>
+                <button class="modal-close" onclick="closeCollectLogModal()">✕</button>
+            </div>
+            <div class="clog-modal-body">
+                <div id="collectLogModalLoading" style="text-align:center;padding:30px;color:#64748b;">加载中...</div>
+                <table class="collect-log-table" id="collectLogModalTable" style="display:none;">
+                    <thead><tr>
+                        <th>#</th><th>采集时间</th><th>触发方式</th><th>状态</th>
+                        <th>批次</th><th>获取数</th><th>成功</th><th>失败</th><th>耗时(ms)</th><th>错误信息</th>
+                    </tr></thead>
+                    <tbody id="collectLogModalBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 钻取详情模态框 -->
+    <div id="drilldownModal" class="modal-overlay" onclick="if(event.target===this)closeDrilldownModal()">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 id="drilldownTitle">查询详情</h3>
+                <button class="modal-close" onclick="closeDrilldownModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="drilldownLoading" class="loading">加载中...</div>
+                <div id="drilldownTenantWrap" style="display:none;">
+                    <table id="drilldownTenantTable">
+                        <thead><tr>
+                            <th>排名</th><th>租户</th><th>SQL数</th>
+                            <th>总IO(MB)</th><th>总CPU(ms)</th><th>总行数</th><th>总成本</th>
+                        </tr></thead>
+                        <tbody id="drilldownTenantBody"></tbody>
+                    </table>
+                </div>
+                <div id="drilldownRecordWrap" style="display:none;">
+                    <table id="drilldownTable">
+                        <thead><tr>
+                            <th>请求ID</th><th>租户</th><th>数据集</th><th>状态</th>
+                            <th>执行(ms)</th><th>Rows</th><th>IO(MB)</th><th>CPU(ms)</th><th>Cost</th><th>时间</th>
+                        </tr></thead>
+                        <tbody id="drilldownBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
